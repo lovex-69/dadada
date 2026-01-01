@@ -1,50 +1,69 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import Layout from '@/components/Layout';
 import IssueDetailPanel from '@/components/IssueDetailPanel';
+import LoadingSpinner from '@/components/LoadingSpinner';
+import { getIssueById, incrementViewCount } from '@/lib/firestore';
+import { Issue } from '@/types';
 
 export default function IssueDetailPage() {
   const router = useRouter();
   const { id } = router.query;
+  const [issue, setIssue] = useState<Issue | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadIssue = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const data = await getIssueById(id as string);
+      setIssue(data);
+    } catch (error) {
+      console.error('Error loading issue:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      loadIssue();
+      incrementViewCount(id as string);
+    }
+  }, [id, loadIssue]);
 
   return (
     <>
       <Head>
-        <title>Issue Details - CivicPulse</title>
-        <meta name="description" content="View issue details" />
+        <title>{issue ? `${issue.title} | CivicPulse` : 'Issue Details | CivicPulse'}</title>
       </Head>
       <Layout>
         <div className="container mx-auto px-4 py-8">
           <button
             onClick={() => router.back()}
-            className="mb-6 text-primary hover:underline"
+            className="mb-6 flex items-center text-sm font-bold text-gray-500 hover:text-primary transition-colors"
           >
-            ← Back
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            BACK TO FEED
           </button>
-          <h1 className="text-3xl font-bold text-primary mb-8">Issue Details</h1>
-          <div className="max-w-2xl">
-            <p className="text-gray-600">Issue ID: {id}</p>
-            <div className="mt-4">
-              <IssueDetailPanel issue={
-                {
-                  id: id as string,
-                  title: 'Sample Issue',
-                  description: 'This is a placeholder issue detail',
-                  category: 'other',
-                  severity: 'medium',
-                  imageUrl: '/placeholder.jpg',
-                  latitude: 0,
-                  longitude: 0,
-                  address: 'Sample Address',
-                  timestamp: Date.now(),
-                  userId: 'sample-user',
-                  viewCount: 0,
-                  shareToken: 'sample-token'
-                }
-              } />
+
+          {loading ? (
+            <div className="flex justify-center py-24">
+              <LoadingSpinner size="lg" />
             </div>
-          </div>
+          ) : issue ? (
+            <div className="max-w-5xl mx-auto">
+              <IssueDetailPanel issue={issue} onUpdate={loadIssue} />
+            </div>
+          ) : (
+            <div className="text-center py-24">
+              <h2 className="text-2xl font-bold text-gray-400">Issue not found</h2>
+              <p className="text-gray-500 mt-2">The issue you are looking for does not exist or has been removed.</p>
+            </div>
+          )}
         </div>
       </Layout>
     </>
