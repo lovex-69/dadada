@@ -15,7 +15,8 @@ import {
   DocumentSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Issue, Category, Severity } from '@/types';
+import { Issue, Category, Severity, IssueStatus, TimelineEvent } from '@/types';
+import { enrichIssue } from './responsibility';
 
 const ISSUES_COLLECTION = 'issues';
 
@@ -31,16 +32,19 @@ export class FirestoreError extends Error {
 
 /**
  * Submit a new issue to Firestore
- * @param issue - Issue data without ID
+ * @param issue - Issue data without ID and generated fields
  * @returns Promise resolving to the document ID
  */
-export const submitIssue = async (issue: Omit<Issue, 'id'>): Promise<string> => {
+export const submitIssue = async (issue: Omit<Issue, 'id' | 'status' | 'timeline' | 'viewCount' | 'shareToken' | 'timestamp'> & { timestamp?: number }): Promise<string> => {
   try {
-    const docRef = await addDoc(collection(db, ISSUES_COLLECTION), {
+    const enriched = enrichIssue({
       ...issue,
       timestamp: issue.timestamp || Date.now(),
-      viewCount: issue.viewCount || 0,
+      viewCount: 0,
+      shareToken: generateShareToken(),
     });
+
+    const docRef = await addDoc(collection(db, ISSUES_COLLECTION), enriched);
     return docRef.id;
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
@@ -51,13 +55,53 @@ export const submitIssue = async (issue: Omit<Issue, 'id'>): Promise<string> => 
 };
 
 /**
+ * Update the status of an issue and add a timeline event
+ * @param issueId - Issue document ID
+ * @param status - New status
+ * @param description - Description for the timeline event
+ * @param updatedBy - Name/ID of the person/system who updated it
+ */
+export const updateIssueStatus = async (
+  issueId: string,
+  status: IssueStatus,
+  description: string,
+  updatedBy: string
+): Promise<void> => {
+  try {
+    const issue = await getIssueById(issueId);
+    if (!issue) throw new Error('Issue not found');
+
+    const newEvent: TimelineEvent = {
+      id: `evt_${Date.now()}`,
+      status,
+      timestamp: Date.now(),
+      description,
+      updatedBy,
+    };
+
+    const docRef = doc(db, ISSUES_COLLECTION, issueId);
+    await updateDoc(docRef, {
+      status,
+      timeline: [...(issue.timeline || []), newEvent],
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Error updating issue status:', error);
+    }
+    throw new FirestoreError('Failed to update issue status', error);
+  }
+};
+
+/**
  * Fetch issues with optional filtering and pagination
- * @param filters - Optional filters for category, severity, limit, and offset
+ * @param filters - Optional filters for category, severity, status, ward, limit, and offset
  * @returns Promise resolving to array of issues
  */
 export const fetchIssues = async (filters?: {
   category?: Category;
   severity?: Severity;
+  status?: IssueStatus;
+  ward?: string;
   limit?: number;
   offset?: number;
 }): Promise<Issue[]> => {
@@ -72,6 +116,14 @@ export const fetchIssues = async (filters?: {
 
     if (filters?.severity) {
       constraints.unshift(where('severity', '==', filters.severity));
+    }
+
+    if (filters?.status) {
+      constraints.unshift(where('status', '==', filters.status));
+    }
+
+    if (filters?.ward) {
+      constraints.unshift(where('ward', '==', filters.ward));
     }
 
     if (filters?.limit) {

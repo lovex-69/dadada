@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Issue } from '@/types';
 
 interface UseFetchIssuesResult {
@@ -17,7 +17,7 @@ export const useFetchIssues = (
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchIssues = async () => {
+  const fetchIssues = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -41,11 +41,11 @@ export const useFetchIssues = (
     } finally {
       setLoading(false);
     }
-  };
+  }, [lat, lon, radius]);
 
   useEffect(() => {
     fetchIssues();
-  }, [lat, lon, radius]);
+  }, [fetchIssues]);
 
   return { issues, loading, error, refetch: fetchIssues };
 };
