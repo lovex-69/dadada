@@ -59,8 +59,13 @@ export interface AppStats {
 
 export interface User {
   uid: string;
-  email: string;
+  email?: string;
   displayName?: string;
-  photoURL?: string;
+  isAnonymous: boolean;
   createdAt: number;
+}
+
+export interface AuthError {
+  code: string;
+  message: string;
 }
